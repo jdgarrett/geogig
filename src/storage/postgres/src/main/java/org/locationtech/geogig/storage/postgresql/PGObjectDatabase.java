@@ -126,7 +126,7 @@ public class PGObjectDatabase implements ObjectDatabase {
      * corresponding factory in this array
      */
     private static final ObjectSerializingFactory[] SUPPORTED_FORMATS = {//
-    DataStreamSerializationFactoryV1.INSTANCE,//
+            DataStreamSerializationFactoryV1.INSTANCE, //
             DataStreamSerializationFactoryV2.INSTANCE //
     };
 
@@ -168,14 +168,14 @@ public class PGObjectDatabase implements ObjectDatabase {
         }
         dataSource = connect();
 
-        Optional<Integer> getAllFetchSize = configdb.get(KEY_GETALL_BATCH_SIZE, Integer.class);
+        Optional<Integer> getAllBatchSize = configdb.get(KEY_GETALL_BATCH_SIZE, Integer.class);
         Optional<Integer> putAllBatchSize = configdb.get(KEY_PUTALL_BATCH_SIZE, Integer.class);
-        if (getAllFetchSize.isPresent()) {
-            Integer fetchSize = getAllFetchSize.get();
-            Preconditions.checkState(fetchSize.intValue() > 0,
+        if (getAllBatchSize.isPresent()) {
+            Integer batchSize = getAllBatchSize.get();
+            Preconditions.checkState(batchSize.intValue() > 0,
                     "postgres.getAllBatchSize must be a positive integer: %s. Check your config.",
-                    fetchSize);
-            this.getAllBatchSize = fetchSize;
+                    batchSize);
+            this.getAllBatchSize = batchSize;
         }
         if (putAllBatchSize.isPresent()) {
             Integer batchSize = putAllBatchSize.get();
@@ -302,7 +302,7 @@ public class PGObjectDatabase implements ObjectDatabase {
             protected List<ObjectId> doRun(Connection cx) throws IOException, SQLException {
                 final String objects = config.getTables().objects();
                 final String sql = format(
-                        "SELECT hash1, hash2, hash3 FROM %s WHERE hash1 = ? LIMIT 100", objects);
+                        "SELECT hash1, hash2, hash3 FROM %s WHERE hash1 = ? LIMIT 1000", objects);
 
                 try (PreparedStatement ps = cx.prepareStatement(sql)) {
                     ps.setInt(1, hash1);
@@ -544,7 +544,8 @@ public class PGObjectDatabase implements ObjectDatabase {
                         pgid.hash1());
 
                 String sql = format(
-                        "INSERT INTO %s (hash1, hash2, hash3, object) VALUES (?,?,?,?)", tableName);
+                        "INSERT INTO %s (hash1, hash2, hash3, object) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
+                        tableName);
 
                 try (PreparedStatement ps = cx.prepareStatement(log(sql, LOG, id, object))) {
                     ps.setInt(1, pgid.hash1());
@@ -1009,7 +1010,8 @@ public class PGObjectDatabase implements ObjectDatabase {
 
             PreparedStatement stmt = perTableStatements.get(tableName);
             if (stmt == null) {
-                String sql = format("INSERT INTO %s (hash1, hash2, hash3, object) VALUES(?,?,?,?)",
+                String sql = format(
+                        "INSERT INTO %s (hash1, hash2, hash3, object) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
                         tableName);
                 stmt = cx.prepareStatement(sql);
                 perTableStatements.put(tableName, stmt);
