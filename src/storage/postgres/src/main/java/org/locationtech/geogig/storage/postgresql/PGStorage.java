@@ -315,7 +315,7 @@ public class PGStorage {
     // "CREATE TABLE %s (hash1 INTEGER, hash2 TEXT, object BYTEA, PRIMARY KEY(hash1, hash2))";
     static final String OBJECT_TABLE_STMT = "CREATE TABLE %s (hash1 INTEGER, hash2 BIGINT, hash3 BIGINT, object BYTEA) WITHOUT OIDS";
 
-    static final String CHILD_TABLE_STMT = "CREATE TABLE %s ( ) INHERITS(%s)";
+    static final String CHILD_TABLE_STMT = "CREATE TABLE %s ( PRIMARY KEY(hash1, hash2, hash3) ) INHERITS(%s)";
 
     /**
      * TODO: compare performance in case we also created indexes for the "abstract" tables (object
@@ -332,8 +332,6 @@ public class PGStorage {
                 tables.tags(), tables.trees());
         for (String tableName : childTables) {
             createObjectChildTable(cx, tableName, objectsTable);
-            createIgnoreDuplicatesRule(cx, tableName);
-            createObjectTableIndex(cx, tableName);
         }
 
         createObjectChildTable(cx, tables.features(), objectsTable);
@@ -347,27 +345,6 @@ public class PGStorage {
 
         String sql = format(CHILD_TABLE_STMT, tableName, parentTable);
         run(cx, sql);
-    }
-
-    private static void createIgnoreDuplicatesRule(Connection cx, String tableName)
-            throws SQLException {
-        String rulePrefix = stripSchema(tableName);
-        String rule = "CREATE OR REPLACE RULE " + rulePrefix
-                + "_ignore_duplicate_inserts AS ON INSERT TO " + tableName
-                + " WHERE (EXISTS ( SELECT 1 FROM " + tableName + " WHERE " + tableName
-                + ".hash1 = NEW.hash1 AND " + tableName + ".hash2 = NEW.hash2 AND " + tableName
-                + ".hash3 = NEW.hash3)) DO INSTEAD NOTHING";
-        run(cx, rule);
-    }
-
-    private static void createObjectTableIndex(Connection cx, String tableName) throws SQLException {
-
-        String index = String.format("CREATE INDEX %s_hash1 ON %s USING HASH(hash1)",
-                stripSchema(tableName), tableName);
-        run(cx, index);
-        // index = String.format("CREATE INDEX %s_hash2 ON %s USING HASH(hash2)",
-        // stripSchema(tableName), tableName);
-        // run(cx, index);
     }
 
     private static void createPartitionedChildTables(final Connection cx, final String parentTable)
@@ -388,12 +365,11 @@ public class PGStorage {
             long next = curr + step;
             String tableName = String.format("%s_%d", parentTable, i);
             String sql = String.format("CREATE TABLE %s"
-                    + " ( CHECK (hash1 >= %d AND hash1 < %d) ) INHERITS (%s)", tableName, curr,
+                            + " ( CHECK (hash1 >= %d AND hash1 < %d), PRIMARY KEY (hash1, hash2, hash3) ) INHERITS (%s)",
+                    tableName, curr,
                     next, parentTable);
 
             run(cx, sql);
-            createIgnoreDuplicatesRule(cx, tableName);
-            createObjectTableIndex(cx, tableName);
 
             f.append(i == 0 ? "IF" : "ELSIF");
             f.append(" ( NEW.hash1 >= ").append(curr);
