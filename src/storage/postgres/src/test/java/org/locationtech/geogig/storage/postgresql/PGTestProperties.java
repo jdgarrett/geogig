@@ -10,6 +10,7 @@
 package org.locationtech.geogig.storage.postgresql;
 
 import org.eclipse.jdt.annotation.Nullable;
+import org.locationtech.geogig.storage.postgresql.Environment.StorageStrategy;
 import org.locationtech.geogig.test.integration.OnlineTestProperties;
 
 public class PGTestProperties extends OnlineTestProperties {
@@ -20,7 +21,8 @@ public class PGTestProperties extends OnlineTestProperties {
             Environment.KEY_DB_SCHEMA, "public",//
             Environment.KEY_DB_NAME, "database",//
             Environment.KEY_DB_USERNAME, "postgres",//
-            Environment.KEY_DB_PASSWORD, "postgres"//
+            Environment.KEY_DB_PASSWORD, "postgres", //
+            Environment.KEY_STORAGE_STRATEGY, "HASH_INDEX"
     };
 
     public PGTestProperties() {
@@ -38,9 +40,11 @@ public class PGTestProperties extends OnlineTestProperties {
         String dbName = get(Environment.KEY_DB_NAME, String.class).orNull();
         String user = get(Environment.KEY_DB_USERNAME, String.class).orNull();
         String pwd = get(Environment.KEY_DB_PASSWORD, String.class).orNull();
+        StorageStrategy strategy = StorageStrategy
+                .fromString(get(Environment.KEY_STORAGE_STRATEGY, String.class).orNull());
         int portNumber = Integer.parseInt(port);
         return new Environment(server, portNumber, dbName, schema, user, pwd, repositoryId,
-                tablePrefix);
+                tablePrefix, strategy);
     }
 
     public String buildRepoURL(@Nullable String repoId, @Nullable String tablePrefix) {
@@ -50,12 +54,14 @@ public class PGTestProperties extends OnlineTestProperties {
         String dbName = get(Environment.KEY_DB_NAME, String.class).orNull();
         String user = get(Environment.KEY_DB_USERNAME, String.class).orNull();
         String pwd = get(Environment.KEY_DB_PASSWORD, String.class).orNull();
+        String strategy = get(Environment.KEY_STORAGE_STRATEGY, String.class).orNull();
         if (repoId == null) {
             repoId = "";
         }
         String url = String.format(
-                "postgresql://%s:%s/%s/%s/%s?user=%s&password=%s&tablePrefix=%s", server, port,
-                dbName, schema, repoId, user, pwd, tablePrefix == null ? "" : tablePrefix);
+                "postgresql://%s:%s/%s/%s/%s?user=%s&password=%s&tablePrefix=%s&objectStorageStrategy=%s",
+                server, port, dbName, schema, repoId, user, pwd,
+                tablePrefix == null ? "" : tablePrefix, strategy == null ? "" : strategy);
         return url;
     }
 

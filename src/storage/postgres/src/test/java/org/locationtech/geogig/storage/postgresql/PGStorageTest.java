@@ -27,6 +27,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.locationtech.geogig.storage.postgresql.Environment.ConnectionConfig;
+import org.locationtech.geogig.storage.postgresql.Environment.StorageStrategy;
 
 public class PGStorageTest {
 
@@ -88,7 +89,8 @@ public class PGStorageTest {
             ConnectionConfig connConfig = config.connectionConfig;
             Environment anotherConfig = new Environment(connConfig.getServer(), connConfig.getPortNumber(),
                     connConfig.getDatabaseName(), connConfig.getSchema(), connConfig.getUser(),
-                    connConfig.getPassword(), "nonExistentRepoId", null);
+ connConfig.getPassword(),
+                    "nonExistentRepoId", null, StorageStrategy.HASH_INDEX);
             assertFalse(PGStorage.repoExists(anotherConfig));
         } finally {
             PGStorage.closeDataSource(ds);

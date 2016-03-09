@@ -69,6 +69,7 @@ import org.locationtech.geogig.storage.ObjectInserter;
 import org.locationtech.geogig.storage.ObjectSerializingFactory;
 import org.locationtech.geogig.storage.datastream.DataStreamSerializationFactoryV1;
 import org.locationtech.geogig.storage.datastream.DataStreamSerializationFactoryV2;
+import org.locationtech.geogig.storage.postgresql.Environment.StorageStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -543,9 +544,12 @@ public class PGObjectDatabase implements ObjectDatabase {
                 final String tableName = tableName(config.getTables(), object.getType(),
                         pgid.hash1());
 
-                String sql = format(
-                        "INSERT INTO %s (hash1, hash2, hash3, object) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
+                String sql = format("INSERT INTO %s (hash1, hash2, hash3, object) VALUES (?,?,?,?)",
                         tableName);
+
+                if (config.getStorageStrategy() == StorageStrategy.BTREE_UPSERT) {
+                    sql += " ON CONFLICT DO NOTHING";
+                }
 
                 try (PreparedStatement ps = cx.prepareStatement(log(sql, LOG, id, object))) {
                     ps.setInt(1, pgid.hash1());
@@ -899,14 +903,18 @@ public class PGObjectDatabase implements ObjectDatabase {
 
         private final AtomicBoolean eofFlag;
 
+        private final StorageStrategy strategy;
+
         public InsertDbOp(DataSource ds, AtomicBoolean abortFlag, AtomicBoolean eofFlag,
-                BlockingQueue<List<EncodedObject>> queue, BulkOpListener listener, TableNames tables) {
+                BlockingQueue<List<EncodedObject>> queue, BulkOpListener listener,
+                TableNames tables, StorageStrategy strategy) {
             this.ds = ds;
             this.abortFlag = abortFlag;
             this.eofFlag = eofFlag;
             this.objects = queue;
             this.listener = listener;
             this.tables = tables;
+            this.strategy = strategy;
         }
 
         @Override
@@ -1010,9 +1018,11 @@ public class PGObjectDatabase implements ObjectDatabase {
 
             PreparedStatement stmt = perTableStatements.get(tableName);
             if (stmt == null) {
-                String sql = format(
-                        "INSERT INTO %s (hash1, hash2, hash3, object) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                String sql = format("INSERT INTO %s (hash1, hash2, hash3, object) VALUES(?,?,?,?)",
                         tableName);
+                if (strategy == StorageStrategy.BTREE_UPSERT) {
+                    sql += " ON CONFLICT DO NOTHING";
+                }
                 stmt = cx.prepareStatement(sql);
                 perTableStatements.put(tableName, stmt);
             }
@@ -1073,7 +1083,7 @@ public class PGObjectDatabase implements ObjectDatabase {
         List<Future<Void>> tasks = new ArrayList<>(numTasks);
         for (int i = 0; i < numTasks; i++) {
             InsertDbOp task = new InsertDbOp(dataSource, abortFlag, eofFlag, queue, listener,
-                    tables);
+                    tables, config.getStorageStrategy());
             tasks.add(executor.submit(task));
         }
 

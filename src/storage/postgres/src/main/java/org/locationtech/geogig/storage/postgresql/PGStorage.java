@@ -25,6 +25,7 @@ import java.util.Map;
 
 import javax.sql.DataSource;
 
+import org.locationtech.geogig.storage.postgresql.Environment.StorageStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -229,7 +230,14 @@ public class PGStorage {
                         createRefsTable(cx, tables);
                         createConflictsTable(cx, tables);
                         createBlobsTable(cx, tables);
-                        createObjectsTables(cx, tables);
+                        switch (config.getStorageStrategy()) {
+                        case HASH_INDEX:
+                            createObjectsTablesHashIndex(cx, tables);
+                            break;
+                        case BTREE_UPSERT:
+                            createObjectsTablesBtreeUpsert(cx, tables);
+                            break;
+                        }
                         createGraphTables(cx, tables);
                         cx.commit();
                     } catch (SQLException | RuntimeException e) {
@@ -315,14 +323,18 @@ public class PGStorage {
     // "CREATE TABLE %s (hash1 INTEGER, hash2 TEXT, object BYTEA, PRIMARY KEY(hash1, hash2))";
     static final String OBJECT_TABLE_STMT = "CREATE TABLE %s (hash1 INTEGER, hash2 BIGINT, hash3 BIGINT, object BYTEA) WITHOUT OIDS";
 
-    static final String CHILD_TABLE_STMT = "CREATE TABLE %s ( PRIMARY KEY(hash1, hash2, hash3) ) INHERITS(%s)";
+    static final String CHILD_TABLE_STMT = "CREATE TABLE %s (%s) INHERITS(%s)";
+
+    static final String BTREE_PRIMARY_KEY = "PRIMARY KEY (hash1, hash2, hash3)";
 
     /**
      * TODO: compare performance in case we also created indexes for the "abstract" tables (object
      * and object_feature), have read somewhere that otherwise you'll get sequential scans from the
      * query planner that can be avoided.
      */
-    private static void createObjectsTables(Connection cx, TableNames tables) throws SQLException {
+    private static void createObjectsTablesHashIndex(Connection cx, TableNames tables)
+            throws SQLException {
+        final StorageStrategy strategy = StorageStrategy.HASH_INDEX;
         String objectsTable = tables.objects();
         String sql = format(OBJECT_TABLE_STMT, objectsTable);
         run(cx, sql);
@@ -331,23 +343,69 @@ public class PGStorage {
         List<String> childTables = ImmutableList.of(tables.commits(), tables.featureTypes(),
                 tables.tags(), tables.trees());
         for (String tableName : childTables) {
-            createObjectChildTable(cx, tableName, objectsTable);
+            createObjectChildTable(cx, tableName, objectsTable, strategy);
+            createIgnoreDuplicatesRule(cx, tableName);
+            createObjectTableIndex(cx, tableName);
         }
 
-        createObjectChildTable(cx, tables.features(), objectsTable);
+        createObjectChildTable(cx, tables.features(), objectsTable, strategy);
         // createForbiddenInsertsToAbstractTableRule(cx, tables.features());
 
-        createPartitionedChildTables(cx, tables.features());
+        createPartitionedChildTables(cx, tables.features(), strategy);
     }
 
-    private static void createObjectChildTable(Connection cx, String tableName, String parentTable)
+    private static void createObjectsTablesBtreeUpsert(Connection cx, TableNames tables)
+            throws SQLException {
+        final StorageStrategy strategy = StorageStrategy.BTREE_UPSERT;
+        String objectsTable = tables.objects();
+        String sql = format(OBJECT_TABLE_STMT, objectsTable);
+        run(cx, sql);
+        // createForbiddenInsertsToAbstractTableRule(cx, objectsTable);
+
+        List<String> childTables = ImmutableList.of(tables.commits(), tables.featureTypes(),
+                tables.tags(), tables.trees());
+        for (String tableName : childTables) {
+            createObjectChildTable(cx, tableName, objectsTable, strategy);
+        }
+
+        createObjectChildTable(cx, tables.features(), objectsTable, strategy);
+        // createForbiddenInsertsToAbstractTableRule(cx, tables.features());
+
+        createPartitionedChildTables(cx, tables.features(), strategy);
+    }
+
+    private static void createIgnoreDuplicatesRule(Connection cx, String tableName)
+            throws SQLException {
+        String rulePrefix = stripSchema(tableName);
+        String rule = "CREATE OR REPLACE RULE " + rulePrefix
+                + "_ignore_duplicate_inserts AS ON INSERT TO " + tableName
+                + " WHERE (EXISTS ( SELECT 1 FROM " + tableName + " WHERE " + tableName
+                + ".hash1 = NEW.hash1 AND " + tableName + ".hash2 = NEW.hash2 AND " + tableName
+                + ".hash3 = NEW.hash3)) DO INSTEAD NOTHING";
+        run(cx, rule);
+    }
+
+    private static void createObjectTableIndex(Connection cx, String tableName)
             throws SQLException {
 
-        String sql = format(CHILD_TABLE_STMT, tableName, parentTable);
+        String index = String.format("CREATE INDEX %s_hash1 ON %s USING HASH(hash1)",
+                stripSchema(tableName), tableName);
+        run(cx, index);
+        // index = String.format("CREATE INDEX %s_hash2 ON %s USING HASH(hash2)",
+        // stripSchema(tableName), tableName);
+        // run(cx, index);
+    }
+
+    private static void createObjectChildTable(Connection cx, String tableName, String parentTable,
+            StorageStrategy strategy)
+            throws SQLException {
+
+        String sql = format(CHILD_TABLE_STMT, tableName,
+                strategy == StorageStrategy.BTREE_UPSERT ? BTREE_PRIMARY_KEY : "", parentTable);
         run(cx, sql);
     }
 
-    private static void createPartitionedChildTables(final Connection cx, final String parentTable)
+    private static void createPartitionedChildTables(final Connection cx, final String parentTable, final StorageStrategy strategy)
             throws SQLException {
         final int min = Integer.MIN_VALUE;
         final long max = (long) Integer.MAX_VALUE + 1;
@@ -364,12 +422,16 @@ public class PGStorage {
         for (long i = 0; i < numTables; i++) {
             long next = curr + step;
             String tableName = String.format("%s_%d", parentTable, i);
-            String sql = String.format("CREATE TABLE %s"
-                            + " ( CHECK (hash1 >= %d AND hash1 < %d), PRIMARY KEY (hash1, hash2, hash3) ) INHERITS (%s)",
-                    tableName, curr,
-                    next, parentTable);
-
+            String sql = String.format(
+                    "CREATE TABLE %s" + " ( CHECK (hash1 >= %d AND hash1 < %d) %s ) INHERITS (%s)",
+                    tableName, curr, next,
+                    strategy == StorageStrategy.BTREE_UPSERT ? ", " + BTREE_PRIMARY_KEY : "",
+                    parentTable);
             run(cx, sql);
+            if (strategy == StorageStrategy.HASH_INDEX) {
+                createIgnoreDuplicatesRule(cx, tableName);
+                createObjectTableIndex(cx, tableName);
+            }
 
             f.append(i == 0 ? "IF" : "ELSIF");
             f.append(" ( NEW.hash1 >= ").append(curr);

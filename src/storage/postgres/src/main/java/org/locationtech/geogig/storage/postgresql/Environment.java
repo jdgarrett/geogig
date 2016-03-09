@@ -51,6 +51,8 @@ public class Environment {
 
     public static final String KEY_PUTALL_BATCH_SIZE = "postgres.putAllBatchSize";
 
+    public static final String KEY_STORAGE_STRATEGY = "postgres.objectStorageStrategy";
+
     static class ConnectionConfig {
         
         private final String user;
@@ -125,6 +127,31 @@ public class Environment {
     private final TableNames tables;
 
     /**
+     * Enumeration of different object storage strategies.
+     */
+    public enum StorageStrategy {
+        /**
+         * Use a hash index.
+         */
+        HASH_INDEX,
+        /**
+         * Use a btree with "upsert". Requires Postgres >9.5.
+         */
+        BTREE_UPSERT;
+
+        public static StorageStrategy fromString(String strategy) {
+            if (strategy != null) {
+                if (strategy.equals("BTREE_UPSERT")) {
+                    return BTREE_UPSERT;
+                }
+            }
+            return HASH_INDEX;
+        }
+    }
+
+    final StorageStrategy strategy;
+
+    /**
      * @param server postgres server name
      * @param portNumber postgres server port number
      * @param databaseName postgres database name
@@ -133,16 +160,19 @@ public class Environment {
      * @param password postgres user password
      * @param repositoryId repository id, optional. If not given this config can only be used by
      *        {@link PGConfigDatabase} to access the "global" configuration.
+     * @param strategy {@link PGObjectDatabase} storage strategy.
      */
     Environment(final String server, final int portNumber, final String databaseName,
             final String schema, final String user, final String password,
-            final @Nullable String repositoryId, final @Nullable String tablePrefix) {
+            final @Nullable String repositoryId, final @Nullable String tablePrefix,
+            final @Nullable StorageStrategy strategy) {
 
         this.connectionConfig = new ConnectionConfig(server, portNumber, databaseName, schema,
                 user, password);
         this.repositoryId = repositoryId;
         this.tables = new TableNames(schema == null ? TableNames.DEFAULT_SCHEMA : schema,
                 tablePrefix == null ? TableNames.DEFAULT_TABLE_PREFIX : tablePrefix);
+        this.strategy = strategy == null ? StorageStrategy.HASH_INDEX : strategy;
     }
 
     /**
@@ -164,6 +194,10 @@ public class Environment {
 
     public TableNames getTables() {
         return tables;
+    }
+
+    public StorageStrategy getStorageStrategy() {
+        return strategy;
     }
 
     private AtomicBoolean repositoryExistsChecked = new AtomicBoolean();

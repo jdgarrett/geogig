@@ -21,6 +21,7 @@ import java.util.Properties;
 
 import org.eclipse.jdt.annotation.Nullable;
 import org.locationtech.geogig.repository.Hints;
+import org.locationtech.geogig.storage.postgresql.Environment.StorageStrategy;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
@@ -63,6 +64,7 @@ class EnvironmentBuilder {
         final String repsitoryId;
         final String user, password;
         final String tablePrefix;// mainly used for unit testing
+        final String strategy;
 
         int port = repoUrl.getPort();
         if (-1 == port) {
@@ -88,6 +90,7 @@ class EnvironmentBuilder {
         user = shortKeys.get("user");
         password = shortKeys.get("password");
         tablePrefix = shortKeys.get("tablePrefix");
+        strategy = shortKeys.get("objectStorageStrategy");
 
         Properties props = new Properties();
         props.setProperty(Environment.KEY_DB_SERVER, host);
@@ -99,6 +102,9 @@ class EnvironmentBuilder {
         props.setProperty(Environment.KEY_DB_PASSWORD, password);
         if (!Strings.isNullOrEmpty(tablePrefix)) {
             props.setProperty("tablePrefix", tablePrefix);
+        }
+        if (!Strings.isNullOrEmpty(strategy)) {
+            props.setProperty(Environment.KEY_STORAGE_STRATEGY, strategy);
         }
         init(props);
     }
@@ -112,6 +118,8 @@ class EnvironmentBuilder {
         String password = props.getProperty(Environment.KEY_DB_PASSWORD);
         @Nullable
         String repoId = props.getProperty(Environment.KEY_REPOSITORY_ID);
+        StorageStrategy strategy = StorageStrategy
+                .fromString(props.getProperty(Environment.KEY_STORAGE_STRATEGY));
 
         checkArgument(server != null, "postgres.server config is not set");
         checkArgument(databaseName != null, "postgres.database config is not set");
@@ -133,7 +141,7 @@ class EnvironmentBuilder {
             tablePrefix = null;
         }
         this.config = new Environment(server, port, databaseName, schema, userName, password,
-                repoId, tablePrefix);
+                repoId, tablePrefix, strategy);
     }
 
     public Environment build() {

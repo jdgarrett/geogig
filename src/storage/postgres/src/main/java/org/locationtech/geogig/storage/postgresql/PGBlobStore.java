@@ -127,7 +127,7 @@ class PGBlobStore implements TransactionBlobStore {
                         "DELETE FROM %s WHERE repository = ? AND namespace = ? AND path = ?",
                         blobsTable);
                 String insert = format(
-                        "INSERT INTO %s (repository, namespace, path, blob) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                        "INSERT INTO %s (repository, namespace, path, blob) VALUES (?, ?, ?, ?)",
                         blobsTable);
                 cx.setAutoCommit(false);
                 try {

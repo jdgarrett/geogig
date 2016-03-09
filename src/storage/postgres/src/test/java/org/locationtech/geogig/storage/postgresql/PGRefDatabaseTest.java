@@ -107,7 +107,7 @@ public class PGRefDatabaseTest extends RefDatabaseTest {
                 mainEnvironment.getPortNumber(), mainEnvironment.getDatabaseName(),
                 mainEnvironment.getSchema(), mainEnvironment.getUser(),
                 mainEnvironment.getPassword(), getClass().getSimpleName() + "2",
-                mainEnvironment.getTables().getPrefix());
+                mainEnvironment.getTables().getPrefix(), mainEnvironment.getStorageStrategy());
         PGStorage.createNewRepo(secondEnvironment);
         PGConfigDatabase secondConfigDb = new PGConfigDatabase(secondEnvironment);
         PGRefDatabase secondRefDb = new PGRefDatabase(secondConfigDb, secondEnvironment);
