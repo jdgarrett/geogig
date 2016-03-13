@@ -1056,7 +1056,8 @@ public class PGObjectDatabase implements ObjectDatabase {
         checkWritable();
         config.checkRepositoryExists();
 
-        final int maxTasks = Math.max(1,
+        final int maxTasks = config.getStorageStrategy() == StorageStrategy.BTREE_NOUPSERT ? 1
+                : Math.max(1,
                 Math.min(Runtime.getRuntime().availableProcessors(), this.threadPoolSize) / 2);
 
         final Iterator<List<EncodedObject>> encoded = Iterators.partition(

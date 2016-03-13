@@ -237,6 +237,9 @@ public class PGStorage {
                         case BTREE_UPSERT:
                             createObjectsTablesBtreeUpsert(cx, tables);
                             break;
+                        case BTREE_NOUPSERT:
+                            createObjectsTablesBtreeNoUpsert(cx, tables);
+                            break;
                         }
                         createGraphTables(cx, tables);
                         cx.commit();
@@ -374,6 +377,25 @@ public class PGStorage {
         createPartitionedChildTables(cx, tables.features(), strategy);
     }
 
+    private static void createObjectsTablesBtreeNoUpsert(Connection cx, TableNames tables)
+            throws SQLException {
+        final StorageStrategy strategy = StorageStrategy.BTREE_NOUPSERT;
+        String objectsTable = tables.objects();
+        String sql = format(OBJECT_TABLE_STMT, objectsTable);
+        run(cx, sql);
+
+        List<String> childTables = ImmutableList.of(tables.commits(), tables.featureTypes(),
+                tables.tags(), tables.trees());
+        for (String tableName : childTables) {
+            createObjectChildTable(cx, tableName, objectsTable, strategy);
+            createIgnoreDuplicatesRule(cx, tableName);
+        }
+
+        createObjectChildTable(cx, tables.features(), objectsTable, strategy);
+
+        createPartitionedChildTables(cx, tables.features(), strategy);
+    }
+
     private static void createIgnoreDuplicatesRule(Connection cx, String tableName)
             throws SQLException {
         String rulePrefix = stripSchema(tableName);
@@ -401,7 +423,7 @@ public class PGStorage {
             throws SQLException {
 
         String sql = format(CHILD_TABLE_STMT, tableName,
-                strategy == StorageStrategy.BTREE_UPSERT ? BTREE_PRIMARY_KEY : "", parentTable);
+                strategy != StorageStrategy.HASH_INDEX ? BTREE_PRIMARY_KEY : "", parentTable);
         run(cx, sql);
     }
 
@@ -425,12 +447,19 @@ public class PGStorage {
             String sql = String.format(
                     "CREATE TABLE %s" + " ( CHECK (hash1 >= %d AND hash1 < %d) %s ) INHERITS (%s)",
                     tableName, curr, next,
-                    strategy == StorageStrategy.BTREE_UPSERT ? ", " + BTREE_PRIMARY_KEY : "",
+                    strategy != StorageStrategy.HASH_INDEX ? ", " + BTREE_PRIMARY_KEY : "",
                     parentTable);
             run(cx, sql);
-            if (strategy == StorageStrategy.HASH_INDEX) {
+            switch (strategy) {
+            case HASH_INDEX:
                 createIgnoreDuplicatesRule(cx, tableName);
                 createObjectTableIndex(cx, tableName);
+                break;
+            case BTREE_NOUPSERT:
+                createIgnoreDuplicatesRule(cx, tableName);
+                break;
+            default:
+                break;
             }
 
             f.append(i == 0 ? "IF" : "ELSIF");

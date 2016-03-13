@@ -137,12 +137,18 @@ public class Environment {
         /**
          * Use a btree with "upsert". Requires Postgres >9.5.
          */
-        BTREE_UPSERT;
+        BTREE_UPSERT,
+        /**
+         * Use a btree without "upsert" capabilities.
+         */
+        BTREE_NOUPSERT;
 
         public static StorageStrategy fromString(String strategy) {
             if (strategy != null) {
                 if (strategy.equals("BTREE_UPSERT")) {
                     return BTREE_UPSERT;
+                } else if (strategy.equals("BTREE_NOUPSERT")) {
+                    return BTREE_NOUPSERT;
                 }
             }
             return HASH_INDEX;
