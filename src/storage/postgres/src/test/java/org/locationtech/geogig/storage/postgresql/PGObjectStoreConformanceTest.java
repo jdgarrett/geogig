@@ -9,11 +9,17 @@
  */
 package org.locationtech.geogig.storage.postgresql;
 
+import static org.junit.Assert.assertEquals;
+
 import java.io.IOException;
+import java.util.LinkedList;
+import java.util.List;
 
 import org.junit.After;
 import org.junit.Rule;
+import org.junit.Test;
 import org.locationtech.geogig.api.Platform;
+import org.locationtech.geogig.api.RevObject;
 import org.locationtech.geogig.repository.Hints;
 import org.locationtech.geogig.storage.ConfigDatabase;
 import org.locationtech.geogig.storage.ObjectStore;
@@ -52,5 +58,18 @@ public class PGObjectStoreConformanceTest extends ObjectStoreConformanceTest {
             }
             configdb = null;
         }
+    }
+
+    @Test
+    public void testPutAllConcurrency() {
+        RevObject object = objects.feature(0, null, "some value");
+        List<RevObject> objects = new LinkedList<RevObject>();
+        for (int i = 0; i < 100; i++) {
+            objects.add(object);
+        }
+
+        ((PGObjectDatabase) db).setPutAllBatchSize(1);
+        db.putAll(objects.iterator());
+        assertEquals(object, db.get(object.getId()));
     }
 }
